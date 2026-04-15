@@ -1,0 +1,83 @@
+# Stack separada (trace_leads_assistant) para não substituir o stack trace_leads da API principal.
+# Deploy: ./deploy.sh ou: docker stack deploy -c docker-compose.yml trace_leads_assistant
+#
+# Redes externas: as mesmas do traceleads-api (Traefik + rede interna opcional).
+
+services:
+  traceleads_assistant_api:
+    image: ghcr.io/victorgolombiescki/traceleads-assistant-api:${IMAGE_TAG:-latest}
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    environment:
+      TZ: America/Sao_Paulo
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "7071"
+      ASSISTANT_HTTP_PORT: "7071"
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      ASSISTANT_API_KEY: ${ASSISTANT_API_KEY}
+      TRACELEADS_API_URL: ${TRACELEADS_API_URL:-https://api.traceleads.com.br}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://app.traceleads.com.br}
+      AI_SDK_LOG_WARNINGS: ${AI_SDK_LOG_WARNINGS:-}
+    networks:
+      - traefik-public
+      - internal
+    deploy:
+      mode: replicated
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+        failure_action: rollback
+        monitor: 30s
+        max_failure_ratio: 0.3
+      rollback_config:
+        parallelism: 1
+        delay: 5s
+        order: stop-first
+        monitor: 30s
+        max_failure_ratio: 0.3
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 768M
+        reservations:
+          cpus: "0.15"
+          memory: 256M
+      labels:
+        - traefik.enable=true
+        - traefik.docker.network=traefik-public
+        - traefik.constraint-label=traefik-public
+        - traefik.http.middlewares.https-cors-tl-assistant.headers.accesscontrolallowmethods=GET,HEAD,OPTIONS,POST,PUT,PATCH,DELETE
+        - traefik.http.middlewares.https-cors-tl-assistant.headers.accesscontrolalloworiginlist=*
+        - traefik.http.middlewares.https-cors-tl-assistant.headers.accesscontrolallowheaders=*
+        - traefik.http.middlewares.https-cors-tl-assistant.headers.accesscontrolmaxage=100
+        - traefik.http.routers.traceai-tl-assistant-http.rule=Host(`${TRACELEADS_TRAEFIK_URL_ASSISTANT}`)
+        - traefik.http.routers.traceai-tl-assistant-http.middlewares=https-redirect,https-cors-tl-assistant
+        - traefik.http.routers.traceai-tl-assistant-http.entrypoints=http
+        - traefik.http.routers.traceai-tl-assistant-https.rule=Host(`${TRACELEADS_TRAEFIK_URL_ASSISTANT}`)
+        - traefik.http.routers.traceai-tl-assistant-https.middlewares=https-cors-tl-assistant
+        - traefik.http.routers.traceai-tl-assistant-https.entrypoints=https
+        - traefik.http.routers.traceai-tl-assistant-https.tls=true
+        - traefik.http.routers.traceai-tl-assistant-https.tls.certresolver=le
+        - traefik.http.services.traceai-tl-assistant.loadbalancer.server.port=7071
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 30s
+    healthcheck:
+      test: "wget -qO- http://127.0.0.1:7071/health || exit 1"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+
+networks:
+  traefik-public:
+    external: true
+  internal:
+    external: true

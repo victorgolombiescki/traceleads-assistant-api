@@ -1,0 +1,28 @@
+{
+  "name": "traceleads-assistant-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "API dedicada ao assistente de IA (mapeamento de empresas / base TraceLeads)",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^2.0.0",
+    "@hono/node-server": "^1.19.0",
+    "ai": "^6.0.0",
+    "dotenv": "^16.6.1",
+    "hono": "^4.10.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.8.3"
+  }
+}
