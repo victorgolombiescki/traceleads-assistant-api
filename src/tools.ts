@@ -1,8 +1,9 @@
 import { tool } from "ai";
 import { z } from "zod";
-import { traceleadsGetJson, traceleadsPostJson } from "./traceleads-client.js";
+import { traceleadsGetJson } from "./traceleads-client.js";
 import { filtroMercadoBaseSchema, filtroMercadoToQueryParams } from "./filter-params.js";
 import { buildOperationalTools } from "./operational-tools.js";
+import { buildActionTools } from "./action-tools.js";
 
 type CountResponse = { total: number };
 
@@ -126,95 +127,6 @@ export function buildMercadoTools(authorization: string) {
     },
   });
 
-  const opcoesFiltrosMercado = tool({
-    description:
-      "Devolve listas oficiais para montar filtros: UFs, portes, regimes tributários, naturezas jurídicas e opções matriz/filial — os mesmos valores que a app usa nos dropdowns.",
-    inputSchema: z.object({}),
-    execute: async () => {
-      const raw = await traceleadsGetJson<Record<string, unknown>>(
-        "/companies-search/filter-options",
-        authorization,
-      );
-      return {
-        fonte: "GET /companies-search/filter-options",
-        ufs: sliceArr<string>(raw.ufs, 30),
-        portes: sliceArr<string>(raw.portes, 45),
-        regimes: sliceArr<string>(raw.regimes, 45),
-        naturezasJuridicas: sliceArr<string>(raw.naturezasJuridicas, 50),
-        matrizFilial: raw.matrizFilial ?? null,
-      };
-    },
-  });
-
-  const pesquisarMunicipiosMercado = tool({
-    description:
-      "Autocompletar nome de município (materialized view da TraceLeads). Opcionalmente restringe por UF (2 letras).",
-    inputSchema: z.object({
-      prefixo: z
-        .string()
-        .max(60)
-        .optional()
-        .describe("Início do nome do município (ex.: Florian)"),
-      uf: z
-        .string()
-        .length(2)
-        .optional()
-        .transform((s) => (s ? s.toUpperCase() : undefined))
-        .describe("Sigla UF para filtrar"),
-      limite: z.number().int().min(1).max(50).optional().default(20),
-    }),
-    execute: async ({ prefixo, uf, limite }) => {
-      const q: Record<string, string> = { limit: String(limite ?? 20) };
-      if (prefixo?.trim()) q.search = prefixo.trim().slice(0, 60);
-      if (uf) q.uf = uf;
-      const lista = await traceleadsGetJson<string[]>("/companies-search/municipios", authorization, q);
-      const municipios = Array.isArray(lista) ? lista.slice(0, limite ?? 20) : [];
-      return { fonte: "GET /companies-search/municipios", municipios };
-    },
-  });
-
-  const grausRiscoDisponiveisMercado = tool({
-    description: "Valores numéricos de grau de risco aceites no filtro grauRisco.",
-    inputSchema: z.object({}),
-    execute: async () => {
-      const raw = await traceleadsGetJson<{ grausRisco?: number[] }>(
-        "/companies-search/graus-risco",
-        authorization,
-      );
-      return {
-        fonte: "GET /companies-search/graus-risco",
-        grausRisco: Array.isArray(raw.grausRisco) ? raw.grausRisco : [],
-      };
-    },
-  });
-
-  const interpretarPerguntaMercado = tool({
-    description:
-      "Parser interno da TraceLeads (IA no servidor): converte uma frase livre em filtros sugeridos + amostra curta de empresas. Mais lento e depende da OPENAI_KEY no servidor; preferir pesquisarCnaesMercado + contar quando possível.",
-    inputSchema: z.object({
-      pergunta: z.string().min(3).max(500).describe("Pergunta do utilizador em linguagem natural"),
-    }),
-    execute: async ({ pergunta }) => {
-      const raw = await traceleadsPostJson<{
-        filters?: Record<string, unknown>;
-        query?: string;
-        empresas?: EmpresaRow[];
-        total?: number;
-        cnaesEncontrados?: number[];
-      }>("/companies-search/parse-query", authorization, { query: pergunta.trim() });
-
-      const empresas = Array.isArray(raw.empresas) ? raw.empresas : [];
-      return {
-        fonte: "POST /companies-search/parse-query",
-        perguntaOriginal: raw.query ?? pergunta,
-        filtrosSugeridos: raw.filters ?? null,
-        cnaesEncontrados: sliceArr<number>(raw.cnaesEncontrados, 40),
-        totalNaAmostra: raw.total ?? empresas.length,
-        exemplos: empresas.slice(0, 5).map(resumoEmpresa),
-      };
-    },
-  });
-
   const contarEmpresasMercado = tool({
     description: `Conta empresas (GET companies-search/count). ${DESCRICAO_FILTROS} Nunca uses CNAE de 4 dígitos (ex. 4111) para perguntas amplas — usa 2 dígitos ou sugestaoFiltroCnaeAmplo de pesquisarCnaesMercado.`,
     inputSchema: filtroMercadoBaseSchema,
@@ -249,56 +161,18 @@ export function buildMercadoTools(authorization: string) {
     },
   });
 
-  const panoramaMercadoAgregado = tool({
-    description:
-      "Visão agregada do mercado (totais por UF, CNAE, porte, resumo geral) via GET /analytics — dados já consolidados pela TraceLeads, sem filtro livre no banco.",
-    inputSchema: z.object({
-      dias: z
-        .union([z.literal(7), z.literal(30), z.literal(90), z.literal(365)])
-        .optional()
-        .describe("Janela opcional em dias para séries temporais; omitir = visão geral"),
-    }),
-    execute: async ({ dias }) => {
-      const query: Record<string, string> = {};
-      if (dias != null) query.days = String(dias);
-      const raw = await traceleadsGetJson<Record<string, unknown>>("/analytics", authorization, query);
-
-      const pickArr = (k: string, n: number) => {
-        const v = raw[k];
-        return Array.isArray(v) ? v.slice(0, n) : [];
-      };
-
-      return {
-        fonte: "GET /analytics",
-        dias: dias ?? null,
-        resumoGeral: raw.resumoGeral ?? null,
-        totalCompanies: raw.totalCompanies,
-        activeCompanies: raw.activeCompanies,
-        companiesByUf: pickArr("companiesByUf", 12),
-        companiesByPorte: pickArr("companiesByPorte", 8),
-        companiesByCnae: pickArr("companiesByCnae", 12),
-        analyticsPorCnae: pickArr("analyticsPorCnae", 12),
-        analyticsPorUf: pickArr("analyticsPorUf", 12),
-      };
-    },
-  });
-
   return {
     pesquisarCnaesMercado,
-    opcoesFiltrosMercado,
-    pesquisarMunicipiosMercado,
-    grausRiscoDisponiveisMercado,
-    interpretarPerguntaMercado,
     contarEmpresasMercado,
     amostraEmpresasMercado,
-    panoramaMercadoAgregado,
   };
 }
 
-/** Mercado (empresas) + operação (leads, WhatsApp, campanhas, …) na mesma sessão. */
+/** Mercado (empresas) + operação (leads, WhatsApp, campanhas, …) + ações (mover lead, follow-up, enriquecimento, newsletter) na mesma sessão. */
 export function buildAssistantTools(authorization: string) {
   return {
     ...buildMercadoTools(authorization),
     ...buildOperationalTools(authorization),
+    ...buildActionTools(authorization),
   };
 }

@@ -78,3 +78,32 @@ export async function traceleadsPostJson<T>(
     clearTimeout(t);
   }
 }
+
+export async function traceleadsPatchJson<T>(
+  path: string,
+  authorization: string,
+  body: unknown,
+): Promise<T> {
+  const url = buildUrl(path);
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: "PATCH",
+      headers: {
+        Authorization: authorization,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body ?? {}),
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      throw new Error(`TraceLeads API ${res.status}: ${text.slice(0, 500)}`);
+    }
+    return JSON.parse(text) as T;
+  } finally {
+    clearTimeout(t);
+  }
+}

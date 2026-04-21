@@ -15,7 +15,13 @@ export const TRACELEADS_RECURSOS_CATALOGO = [
   { id: "tl_leads_lista", path: "/leads", descricao: "Lista de leads com filtros", queryKeysPermitidas: ["limit", "offset", "status", "search", "responsibleId", "pipelineId", "temperature", "questionnairePending", "groupId"] },
   { id: "tl_leads_count", path: "/leads/count", descricao: "Contagem de leads (acumulado; filtros status/pipeline; sem período/data)" },
   { id: "tl_leads_stats", path: "/leads/stats", descricao: "Estatísticas de leads por pipeline (agregado)" },
-  { id: "tl_leads_kanban_board", path: "/leads/kanban-board", descricao: "Quadro kanban de leads" },
+  {
+    id: "tl_leads_kanban_board",
+    path: "/leads/kanban-board",
+    descricao:
+      "FONTE PREFERIDA para 'quantos leads por etapa/coluna'. Devolve array de colunas com countByStatus (contagem real por coluna, isolada por pipelineId). Sem pipelineId usa o pipeline padrão automaticamente. Filtra por lead.pipelineId no SQL — resultado é o que o utilizador vê no ecrã. Usa sempre este em vez de tl_leads_indicators_funnel para contar leads por etapa.",
+    queryKeysPermitidas: ["pipelineId", "limit"],
+  },
   { id: "tl_leads_status_map", path: "/leads/status-map", descricao: "Mapa de estados dos leads" },
   { id: "tl_leads_kanban_columns", path: "/leads/kanban-columns", descricao: "Colunas do kanban de leads" },
   { id: "tl_leads_groups", path: "/leads/groups", descricao: "Grupos de leads" },
@@ -23,12 +29,18 @@ export const TRACELEADS_RECURSOS_CATALOGO = [
   { id: "tl_leads_questionarios", path: "/leads/questionnaires", descricao: "Questionários de leads" },
   { id: "tl_leads_scoring_rules", path: "/leads/scoring-rules", descricao: "Regras de scoring" },
   { id: "tl_leads_leaderboard", path: "/leads/leaderboard", descricao: "Leaderboard de responsáveis / performance" },
-  { id: "tl_leads_indicators_funnel", path: "/leads/indicators/funnel", descricao: "Indicador: funil de vendas", queryKeysPermitidas: ["pipelineId"] },
+  {
+    id: "tl_leads_indicators_funnel",
+    path: "/leads/indicators/funnel",
+    descricao:
+      "⚠️ USAR APENAS para métricas de funil (valor, tempo médio na etapa, paradosMais7Dias). NÃO usar para contar leads por etapa — sem pipelineId mistura todos os leads da conta (incluindo leads sem pipeline atribuído) e dá contagens incorretas. Para 'quantos leads por etapa' usa SEMPRE tl_leads_kanban_board.",
+    queryKeysPermitidas: ["pipelineId"],
+  },
   {
     id: "tl_leads_indicators_summary",
     path: "/leads/indicators/summary",
     descricao:
-      "Totais da conta: totalLeads, pipelineCount, valores ganhos/perdidos/em pipeline (acumulado; não substitui período nem painel completo). Query opcional pipelineId.",
+      "Totais da conta: totalLeads, pipelineCount, valores ganhos/perdidos/em pipeline (acumulado; não substitui período nem painel completo). Query opcional pipelineId. IMPORTANTE: se a empresa tiver múltiplos pipelines, passa SEMPRE pipelineId para evitar zeros ou dados misturados — chama tl_pipelines_lista primeiro se não souberes o id.",
     queryKeysPermitidas: ["pipelineId"],
   },
   { id: "tl_leads_indicators_by_responsible", path: "/leads/indicators/by-responsible", descricao: "Indicador: por responsável", queryKeysPermitidas: ["pipelineId"] },
@@ -70,6 +82,7 @@ export const TRACELEADS_RECURSOS_CATALOGO = [
   { id: "tl_whatsapp_templates", path: "/whatsapp/templates", descricao: "Modelos de mensagem WhatsApp" },
   { id: "tl_whatsapp_quick_replies", path: "/whatsapp/quick-replies", descricao: "Respostas rápidas WhatsApp" },
   { id: "tl_whatsapp_bulk_send", path: "/whatsapp/bulk-send", descricao: "Envios em massa WhatsApp" },
+  { id: "tl_email_templates", path: "/email/templates", descricao: "Templates de e-mail criados na conta (id, name, subject, htmlContent). Usar para listar templates disponíveis ao criar campanha." },
   { id: "tl_campaigns_lista", path: "/campaigns", descricao: "Campanhas de e-mail" },
   { id: "tl_campaigns_send_config", path: "/campaigns/send-config", descricao: "Configuração de envio de campanhas" },
   { id: "tl_campaigns_leads", path: "/campaigns/leads", descricao: "Leads disponíveis para campanhas", queryKeysPermitidas: ["search", "limit", "offset"] },
