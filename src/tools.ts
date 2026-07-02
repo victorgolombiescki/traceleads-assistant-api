@@ -17,7 +17,13 @@ type DataResponse = {
 
 type CnaeItem = { codigo: string; descricao: string };
 
-/** Agrupa os 2 primeiros dígitos dos CNAEs devolvidos (amostra da API) — ajuda a usar UM prefixo em contarEmpresasMercado em vez de listar dezenas de códigos. */
+type CnaeSugestao = {
+  codigo: string;
+  descricaoReferencia: string;
+  ocorrenciasNaBusca: number;
+  exemplos: CnaeItem[];
+};
+
 function calcularPrefixosDominantes(cnaes: CnaeItem[], limite = 8): { prefixo: string; ocorrenciasNaAmostra: number }[] {
   const counts = new Map<string, number>();
   for (const { codigo } of cnaes) {
@@ -45,16 +51,34 @@ function mergeCnaesPorCodigo(a: CnaeItem[], b: CnaeItem[]): CnaeItem[] {
   return [...m.values()];
 }
 
-/** Sugestão conservadora para filtro "cnae" amplo (2 dígitos ou 41,42) — evita 4111/4931 a quatro dígitos. */
-function inferirSugestaoFiltroCnaeAmplo(
-  termo: string,
-  prefixosDominantes: { prefixo: string }[],
-): string | null {
-  const t = termo.toLowerCase();
-  if (/construt|constru|edif[ií]cio|empreiteir|obra\s*civil/i.test(t)) return "41,42";
-  if (/transport|transportad|carga|log[ií]stic|rodovi[aá]ri/i.test(t)) return "49";
-  const top = prefixosDominantes[0]?.prefixo;
-  return top && /^\d{2}$/.test(top) ? top : null;
+function buildCnaeSugestoes(cnaes: CnaeItem[]): CnaeSugestao[] {
+  const byPrefix = new Map<string, { count: number; exemplos: CnaeItem[] }>();
+  for (const c of cnaes) {
+    const cod = String(c.codigo || "").replace(/\D/g, "");
+    const p = cod.slice(0, 2);
+    if (!p) continue;
+    const cur = byPrefix.get(p) ?? { count: 0, exemplos: [] };
+    cur.count += 1;
+    if (cur.exemplos.length < 4) cur.exemplos.push(c);
+    byPrefix.set(p, cur);
+  }
+  return [...byPrefix.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, 5)
+    .map(([prefixo, data]) => ({
+      codigo: prefixo,
+      descricaoReferencia: data.exemplos[0]?.descricao ?? "",
+      ocorrenciasNaBusca: data.count,
+      exemplos: data.exemplos,
+    }));
+}
+
+function buildCnaeDescricoesFromSugestoes(sugestoes: CnaeSugestao[]) {
+  return sugestoes.map((s) => ({
+    codigo: s.codigo,
+    descricao: s.descricaoReferencia,
+    tipo: "divisao" as const,
+  }));
 }
 
 function resumoEmpresa(e: EmpresaRow) {
@@ -70,11 +94,7 @@ function resumoEmpresa(e: EmpresaRow) {
 }
 
 const DESCRICAO_FILTROS =
-  "Objeto opcional (consulta avançada): ufs, cnae (preferir 2 dígitos ou 7; vírgula=OR, ex. 41,42), cnaeSecundario + cnaeOperador, municipio(s), buscaTexto, porte(s), regimesTributarios, capital, dataInicioMin/dataInicioMax (início de atividade; **ano = referência temporal do system**, nunca 2023 por defeito), e-mail/telefone, Simples/MEI, matriz/filial, natureza, excluir e-mail/leads, filiais/funcionários, grauRisco. Se total=0 com pergunta ampla, repetir com cnae de 2 dígitos (ex. 41 ou 49) antes de concluir.";
-
-function sliceArr<T>(v: unknown, max: number): T[] {
-  return Array.isArray(v) ? (v.slice(0, max) as T[]) : [];
-}
+  "Objeto opcional: ufs, cnae (obtido em pesquisarCnaesMercado), cnaeDescricoes (da pesquisa), municipio(s), buscaTexto, porte(s), regimesTributarios, capital, dataInicioMin/Max, e-mail/telefone, Simples/MEI, matriz/filial, natureza, excluir leads, filiais/funcionários, grauRisco. Nunca chute CNAE de memória — pesquise primeiro.";
 
 /**
  * Ferramentas só chamam a API TraceLeads (JWT do utilizador) — nenhum SQL direto.
@@ -82,7 +102,7 @@ function sliceArr<T>(v: unknown, max: number): T[] {
 export function buildMercadoTools(authorization: string) {
   const pesquisarCnaesMercado = tool({
     description:
-      "CNAEs existentes na base por texto ou dígitos. Devolve prefixosDominantesNosResultados, sugestaoFiltroCnaeAmplo (41,42 construção; 49 transporte terrestre quando o termo bate com esses casos) e referenciaRapidaDivisoes. Opcional termoAlternativo funde duas buscas (ex. transportador + carga). Usa sugestaoFiltroCnaeAmplo em contarEmpresasMercado para perguntas amplas.",
+      "PASSO 1 obrigatório quando o utilizador descreve setor em linguagem natural. Busca CNAEs reais na base (GET /companies-search/cnaes). Retorna cnaeSugeridoParaContagem e cnaeDescricoesParaContagem — use-os em contarEmpresasMercado. Opcional termoAlternativo funde duas buscas.",
     inputSchema: z.object({
       termo: z
         .string()
@@ -94,7 +114,7 @@ export function buildMercadoTools(authorization: string) {
         .min(2)
         .max(80)
         .optional()
-        .describe("Segundo termo para fundir resultados (sinónimo ou foco, ex. carga após transportador)"),
+        .describe("Segundo termo para fundir resultados (sinónimo ou foco)"),
     }),
     execute: async ({ termo, termoAlternativo }) => {
       const t0 = termo.trim();
@@ -108,36 +128,65 @@ export function buildMercadoTools(authorization: string) {
       const rawA = Array.isArray(listaA) ? listaA : [];
       const rawB = Array.isArray(listaB) ? listaB : [];
       const merged = t1 ? mergeCnaesPorCodigo(rawA, rawB) : rawA;
-      const prefixosDominantesNosResultados = calcularPrefixosDominantes(merged);
-      const sugestaoFiltroCnaeAmplo = inferirSugestaoFiltroCnaeAmplo(`${t0} ${t1 ?? ""}`.trim(), prefixosDominantesNosResultados);
+      const cnaeSugestoes = buildCnaeSugestoes(merged);
+      const cnaeSugeridoParaContagem = cnaeSugestoes[0] ?? null;
+      const cnaeDescricoesParaContagem = buildCnaeDescricoesFromSugestoes(
+        cnaeSugestoes.length > 1 ? cnaeSugestoes.slice(0, 2) : cnaeSugestoes,
+      );
+      const cnaeParam =
+        cnaeSugestoes.length > 1
+          ? cnaeSugestoes.slice(0, 2).map((s) => s.codigo).join(",")
+          : cnaeSugeridoParaContagem?.codigo;
       const cnaes = merged.slice(0, 35);
       return {
         fonte: "GET /companies-search/cnaes",
         termosUsados: t1 ? [t0, t1] : [t0],
         quantidadeResultadosUnicos: merged.length,
-        prefixosDominantesNosResultados,
-        sugestaoFiltroCnaeAmplo,
-        referenciaRapidaDivisoes:
-          "CNAE 2.0 (resumo): 41 construção civil (inclui 4120400 edifícios); 42 obras de engenharia/infra; 43 trabalhos especializados em construção; 49 transporte terrestre. Evitar filtros a 4 dígitos (4111, 4931) para perguntas amplas.",
+        prefixosDominantesNosResultados: calcularPrefixosDominantes(merged),
+        cnaeSugeridoParaContagem,
+        cnaeSugestoes,
+        cnaeDescricoesParaContagem,
+        proximoPassoObrigatorio: cnaeSugeridoParaContagem
+          ? `Chame contarEmpresasMercado com cnae: "${cnaeParam}" e cnaeDescricoes: ${JSON.stringify(cnaeDescricoesParaContagem)} + demais filtros.`
+          : "Nenhum CNAE encontrado — peça mais detalhes ou outro termo.",
         amostraTruncada: merged.length > cnaes.length,
         cnaes,
-        dica:
-          "Para transportadoras em SC: contarEmpresasMercado com ufs: [\"SC\"] e cnae \"49\" (ou sugestaoFiltroCnaeAmplo). Para construtoras no Brasil: cnae \"41\" ou \"41,42\".",
+        instrucaoRespostaLex:
+          "Use o CNAE e a descrição retornados pela pesquisa. Não invente código nem nome de setor.",
       };
     },
   });
 
   const contarEmpresasMercado = tool({
-    description: `Conta empresas (GET companies-search/count). ${DESCRICAO_FILTROS} Nunca uses CNAE de 4 dígitos (ex. 4111) para perguntas amplas — usa 2 dígitos ou sugestaoFiltroCnaeAmplo de pesquisarCnaesMercado.`,
+    description: `PASSO 2: conta empresas (GET companies-search/market-counts — cubo BQ). Use DEPOIS de pesquisarCnaesMercado quando o setor veio em texto. Passe cnae + cnaeDescricoes da pesquisa. ${DESCRICAO_FILTROS} Evitar CNAE de 4 dígitos (4111, 4931).`,
     inputSchema: filtroMercadoBaseSchema,
     execute: async (input) => {
       const base = filtroMercadoToQueryParams(input);
-      const data = await traceleadsGetJson<CountResponse>(
-        "/companies-search/count",
+      const data = await traceleadsGetJson<CountResponse & {
+        comEmail?: number;
+        comTelefone?: number;
+        comEmailETelefone?: number;
+        fonte?: string;
+        consultaLenta?: boolean;
+        durationMs?: number;
+      }>(
+        "/companies-search/market-counts",
         authorization,
         base,
       );
-      return { total: data.total, filtrosAplicados: base };
+      return {
+        total: data.total,
+        comEmail: data.comEmail,
+        comTelefone: data.comTelefone,
+        comEmailETelefone: data.comEmailETelefone,
+        leadsNoNicho: (data as { leadsNoNicho?: number }).leadsNoNicho,
+        clientesNoNicho: (data as { clientesNoNicho?: number }).clientesNoNicho,
+        fonte: data.fonte,
+        consultaLenta: data.consultaLenta,
+        filtrosAplicados: (data as { filtrosAplicados?: string[] }).filtrosAplicados ?? [],
+        cnaesDescricao: (data as { cnaesDescricao?: unknown[] }).cnaesDescricao ?? [],
+        instrucaoRespostaLex: (data as { instrucaoRespostaLex?: string }).instrucaoRespostaLex,
+      };
     },
   });
 

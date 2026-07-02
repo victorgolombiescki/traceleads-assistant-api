@@ -9,10 +9,16 @@
  *   TRACELEADS_API_HOST=api.seudominio.com
  *   TRACELEADS_API_PORT=443   (opcional; omitir em 80/443 padrão se quiser)
  */
+function normalizeApiOrigin(raw: string): string {
+  const trimmed = raw.replace(/\/+$/, "");
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+}
+
 export function resolveTraceleadsApiOrigin(): string {
   const single = process.env.TRACELEADS_API_URL?.trim();
   if (single) {
-    return single.replace(/\/+$/, "");
+    return normalizeApiOrigin(single);
   }
 
   const host = process.env.TRACELEADS_API_HOST?.trim();

@@ -71,6 +71,17 @@ export const filtroMercadoBaseSchema = z.object({
   quantidadeFuncionarios: z.number().int().min(1).max(9999999).optional(),
   quantidadeFuncionariosOperador: z.enum(["gte", "lte"]).optional(),
   grauRisco: z.number().int().min(1).max(99).optional(),
+  /** Descrições CNAE da pesquisa anterior — repassadas para rotular filtros na resposta. */
+  cnaeDescricoes: z
+    .array(
+      z.object({
+        codigo: z.string().max(10),
+        descricao: z.string().max(200),
+        tipo: z.enum(["divisao", "classe", "subclasse"]).optional(),
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 
 export type FiltroMercadoBase = z.infer<typeof filtroMercadoBaseSchema>;
@@ -154,6 +165,10 @@ export function filtroMercadoToQueryParams(f: FiltroMercadoBase): MercadoQueryPa
   }
 
   if (f.grauRisco != null) q.grauRisco = String(f.grauRisco);
+
+  if (f.cnaeDescricoes?.length) {
+    q.cnaeDescricoes = JSON.stringify(f.cnaeDescricoes);
+  }
 
   return q;
 }

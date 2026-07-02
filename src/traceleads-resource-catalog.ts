@@ -65,7 +65,12 @@ export const TRACELEADS_RECURSOS_CATALOGO = [
   {
     id: "tl_whatsapp_connection",
     path: "/whatsapp/connection",
-    descricao: "Estado da integração WhatsApp Cloud API da empresa (ligação, número, etc.) — usar para ‘como está o meu WhatsApp’.",
+    descricao: "Estado da integração WhatsApp Cloud API da empresa (ligação principal, número, etc.) — usar para ‘como está o meu WhatsApp’.",
+  },
+  {
+    id: "tl_whatsapp_connections",
+    path: "/whatsapp/connections",
+    descricao: "Lista todos os números WhatsApp conectados da empresa (multi-número na mesma WABA), com agente padrão por número.",
   },
   { id: "tl_whatsapp_access_check", path: "/whatsapp/access/check", descricao: "Se o módulo/plano permite WhatsApp" },
   {
@@ -112,7 +117,9 @@ export const TRACELEADS_RECURSOS_CATALOGO = [
   { id: "tl_calendar_slots", path: "/calendar/slots", descricao: "Slots de agendamento (público)", queryKeysPermitidas: ["date", "userId", "companyId"] },
   { id: "tl_calendar_agendamentos", path: "/calendar/appointments", descricao: "Agendamentos da empresa", queryKeysPermitidas: ["leadCnpj", "userId"] },
   { id: "tl_kanban_boards", path: "/kanban/boards", descricao: "Quadros kanban (gestão)" },
-  { id: "tl_meta_leadgen_configs", path: "/meta-leadgen/configs", descricao: "Configurações Meta Lead Ads" },
+  { id: "tl_meta_leadgen_configs", path: "/meta-leadgen/configs", descricao: "Configurações Meta Lead Ads (legado)" },
+  { id: "tl_meta_ads_config", path: "/meta-ads/config", descricao: "Configurações módulo Meta Ads" },
+  { id: "tl_meta_ads_dashboard", path: "/meta-ads/dashboard", descricao: "Dashboard métricas Meta Ads" },
   { id: "tl_inbound_configs", path: "/inbound-lead/configs", descricao: "Configurações de captura inbound" },
   { id: "tl_news_agenda_dates", path: "/news-agenda/dates", descricao: "Datas com notícias na agenda IA", queryKeysPermitidas: ["limit"] },
   { id: "tl_news_agenda_profile", path: "/news-agenda/profile", descricao: "Perfil da empresa na agenda de notícias" },

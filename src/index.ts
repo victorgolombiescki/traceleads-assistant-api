@@ -209,23 +209,29 @@ Toda informação factual (números, listas, estados) deve vir das ferramentas �
 - **Não inventes** contagens "com e-mail": \`tl_leads_count\` e \`tl_leads_indicators_summary\` **não** devolvem breakdown por e-mail. Só menciona e-mail se aparecer nos dados (ex.: detalhe de um lead).
 - Se disseres um total alto e depois um número baixo para "este mês", **explica**: o primeiro é acumulado na conta; o segundo é só **criações no período** — não são contraditórios.
 
-## CNAE — erro comum (prefixos a 4 dígitos)
-O filtro "cnae" usa correspondência por dígitos (LIKE). Códigos de **4 dígitos** tipo 4111 ou 4931 só apanham CNAEs que **começam** por esses quatro dígitos. Por exemplo **4120400** (Construção de edifícios) **não** entra em 4111% — daí totais zerados errados.
-- **Construtoras / construção civil** (amplo): **cnae "41"** ou **"41,42"** (41 + obras de infra).
-- **Transportadoras / transporte rodoviário** (amplo): **cnae "49"**; com estado, ex.: **ufs: ["SC"]** e **cnae "49"**. Não uses 4931 como proxy de “todo o transporte” sem um CNAE de 7 dígitos confirmado em pesquisarCnaesMercado.
-- Preferir **2 dígitos** ou **7 dígitos** confirmados na base. Vírgula = OR (ex. "41,42").
+## CNAE — regras técnicas
+O filtro "cnae" usa correspondência por dígitos (LIKE). Códigos de **4 dígitos** tipo 4111 ou 4931 só apanham CNAEs que **começam** por esses quatro dígitos — evitar para perguntas amplas.
+- Preferir **2 dígitos** (prefixo) ou **7 dígitos** confirmados na base. Vírgula = OR (ex. "41,42").
+- **NUNCA chute CNAE de memória** (41, 49, etc.) — sempre chame **pesquisarCnaesMercado** primeiro quando o setor vier em linguagem natural.
 
-## Fluxo
-1) "pesquisarCnaesMercado" — prefixosDominantesNosResultados e **sugestaoFiltroCnaeAmplo** quando existir.
-2) "contarEmpresasMercado" / "amostraEmpresasMercado".
-3) Se o total for **0** e a pergunta for ampla (setor + UF ou país), **não** afirmar já que não há empresas: repete com cnae de **2 dígitos** (ex. 41 ou 49, ou "41,42") ou "interpretarPerguntaMercado".
+## Fluxo mercado (obrigatório)
+1) **pesquisarCnaesMercado** — busca CNAE real na base; usa \`cnaeSugeridoParaContagem\` e \`cnaeDescricoesParaContagem\`
+2) **contarEmpresasMercado** — passa \`cnae\` + \`cnaeDescricoes\` do passo 1 + UF/outros filtros
+3) **amostraEmpresasMercado** — opcional, mesmos filtros do passo 2
+4) Se total=0 com pergunta ampla, repita pesquisarCnaesMercado com termo alternativo antes de concluir que não há empresas
 
-Não há tabela setor→CNAE na base; a pesquisa usa dados reais. Para “Brasil inteiro”, omite ufs. Listas longas de 7 dígitos só para nichos muito específicos.
+## Resposta de mercado (obrigatório)
+- Sempre mostrar bloco **"Filtros aplicados:"** usando os textos de \`filtrosAplicados\` retornados pela tool (inclui **nome/descrição do CNAE**, não só o número).
+- Depois bloco **"Resultado:"** com total, com e-mail, com telefone, com ambos; leads/clientes no nicho se > 0.
+- Se CNAE for prefixo de 2 dígitos, explique que inclui subcategorias da divisão encontrada na pesquisa.
+- Siga \`instrucaoRespostaLex\` quando a tool devolver esse campo.
+
+Não há tabela setor→CNAE fixa; a pesquisa usa dados reais da base. Para “Brasil inteiro”, omite ufs.
 
 ## Mercado — anos em \`dataInicioMin\` / \`dataInicioMax\`
 - Erro frequente: o modelo preenche **2023** ou outro ano antigo em filtros quando o utilizador quer **o mês/ano atuais**. Isso zera resultados (ex.: aberturas em outubro de 2023 vs base atual). **Obrigatório** alinhar à secção **Referência temporal** (data ISO local e exemplo de início/fim do mês corrente).
 
-"panoramaMercadoAgregado" = analytics agregado; "consultarRecursoTraceLeads" = dezenas de endpoints GET allowlisted (dashboard, leads, indicadores, WhatsApp, campanhas…); escolhe o "recurso" certo. "consultarDetalheTraceLeads" = um lead, campanha, pipeline, agente ou conversa WhatsApp por id.
+"consultarRecursoTraceLeads" = dezenas de endpoints GET allowlisted (dashboard, leads, indicadores, WhatsApp, campanhas, analytics tl_analytics_*…); escolhe o "recurso" certo. "consultarDetalheTraceLeads" = um lead, campanha, pipeline, agente ou conversa WhatsApp por id.
 
 ## Ferramentas de ação disponíveis (exigem confirmação prévia)
 - **moverLeadNoFunil**: move um lead de coluna no pipeline. Use consultarRecursoTraceLeads(tl_pipelines_lista) antes para obter ids de colunas.
@@ -319,6 +325,8 @@ function authAssistente(c: { req: { header: (n: string) => string | undefined } 
 }
 
 function userAuthorization(c: { req: { header: (n: string) => string | undefined } }): string | null {
+  const forwarded = c.req.header("x-user-authorization")?.trim();
+  if (forwarded?.toLowerCase().startsWith("bearer ")) return forwarded;
   const a = c.req.header("Authorization")?.trim();
   if (!a?.toLowerCase().startsWith("bearer ")) return null;
   return a;
@@ -342,7 +350,7 @@ app.use(
       if (!origin) return allowed[0] ?? "*";
       return allowed.includes(origin) ? origin : allowed[0] ?? "*";
     },
-    allowHeaders: ["Content-Type", "Authorization", "x-assistant-key"],
+    allowHeaders: ["Content-Type", "Authorization", "x-assistant-key", "x-user-authorization"],
     allowMethods: ["GET", "POST", "OPTIONS"],
     /** Resposta do AI SDK (`toUIMessageStreamResponse`) — o browser precisa de ler este header em CORS. */
     exposeHeaders: ["x-vercel-ai-ui-message-stream"],
