@@ -12,6 +12,7 @@ import { streamText, convertToModelMessages, stepCountIs, type UIMessage } from 
 import { createOpenAI } from "@ai-sdk/openai";
 import { buildAssistantTools } from "./tools.js";
 import { traceleadsGetJson } from "./traceleads-client.js";
+import { identityFromHeaders, identityPreamble } from "./brand-identity.js";
 
 const TZ_REFERENCIA_USUARIO = "America/Sao_Paulo";
 
@@ -364,8 +365,8 @@ const ERR_ASSISTENTE_INDISPONIVEL =
   "O assistente não está disponível neste momento. Tenta mais tarde ou contacta o suporte.";
 const ERR_ASSISTENTE_ACESSO =
   "Não foi possível validar o acesso ao assistente. Recarrega a página ou inicia sessão de novo.";
-const ERR_ASSISTENTE_SESSAO =
-  "Sessão inválida para o assistente. Inicia sessão outra vez na TraceLeads.";
+// Sem nome de marca: a mesma mensagem serve ao painel TraceLeads e ao de revendedor.
+const ERR_ASSISTENTE_SESSAO = "Sessão inválida para o assistente. Inicia sessão outra vez.";
 
 app.post("/api/chat", async (c) => {
   try {
@@ -412,9 +413,13 @@ app.post("/api/chat", async (c) => {
       systemMessageCompleto(authorization),
     ]);
 
+    // Painel de revendedor: a identidade da marca vem antes do prompt padrão.
+    const identity = identityFromHeaders((name) => c.req.header(name));
+    const system = identity ? `${identityPreamble(identity)}\n\n${systemMsg}` : systemMsg;
+
     const result = streamText({
       model: openai(modelId),
-      system: systemMsg,
+      system,
       messages: modelMessages,
       tools,
       stopWhen: stepCountIs(24),
