@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:22.23.4-alpine AS builder
 
 WORKDIR /usr/src/app
 
@@ -11,7 +11,7 @@ COPY src ./src
 RUN npm run build && \
     test -f dist/index.js && echo "✅ dist/index.js" || (echo "❌ build sem dist/index.js" && ls -la dist && exit 1)
 
-FROM node:20-alpine AS production
+FROM node:22.23.4-alpine AS production
 
 ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
